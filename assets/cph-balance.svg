@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CPH, balance de justice">
+  <circle cx="256" cy="256" r="244" fill="#13273d" stroke="#b49762" stroke-width="18"/>
+  <g fill="none" stroke="#f7f2e8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 95v214M156 173h200M184 173l-58 100h116l-58-100M328 173l-58 100h116l-58-100M180 322h152M203 361h106" stroke-width="19"/>
+    <path d="M126 273c17 27 99 27 116 0M270 273c17 27 99 27 116 0" stroke="#b49762" stroke-width="12"/>
+  </g>
+  <text x="256" y="441" text-anchor="middle" fill="#b49762" font-family="Arial, sans-serif" font-size="76" font-weight="700" letter-spacing="9">CPH</text>
+</svg>

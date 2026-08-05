@@ -1,0 +1,56 @@
+{
+  "name": "syllogisme-redaction",
+  "version": "0.3.42",
+  "description": "Application locale de rédaction de jugements prud'homaux",
+  "main": "main.js",
+  "author": "CGT BEL",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "release": "electron-builder --win nsis --publish always"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "docx": "^9.5.1",
+    "electron-updater": "^6.8.9",
+    "pdf-parse": "^1.1.1"
+  },
+  "build": {
+    "appId": "fr.cgtbel.redactionprudhomale",
+    "productName": "Rédaction prud'homale",
+    "directories": {
+      "output": "dist"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SYNDICATCGTBEL",
+        "repo": "REDACTION-PRUDHOMALE"
+      }
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "pdf-worker.js",
+      "index.html",
+      "regles-syllogisme.js",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/cph-balance.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Redaction-prudhomale-${version}-setup.${ext}"
+    }
+  }
+}
