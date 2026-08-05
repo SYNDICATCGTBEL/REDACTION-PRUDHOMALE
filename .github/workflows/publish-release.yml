@@ -30,3 +30,14 @@ jobs:
         run: npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Conserver les deux dernières versions publiées
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $versions = gh release list --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName'
+          $versionsASupprimer = @($versions | Select-Object -Skip 2)
+          foreach ($version in $versionsASupprimer) {
+            gh release delete $version --yes
+          }
