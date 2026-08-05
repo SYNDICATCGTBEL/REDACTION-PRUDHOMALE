@@ -26,17 +26,25 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
-      - name: Construire et publier la mise à jour
-        run: npm run release
+      - name: Construire la mise à jour
+        run: npm run dist
+
+      - name: Publier la version
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installateur = "dist/Redaction-prudhomale-$version-setup.exe"
+          $blockmap = "$installateur.blockmap"
+          gh release create "v$version" $installateur $blockmap "dist/latest.yml" --verify-tag --title "Version $version" --notes "Correction et mise à jour de Rédaction prud’homale." --latest
 
       - name: Conserver les deux dernières versions publiées
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $versions = gh release list --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName'
+          $versions = gh release list --exclude-drafts --limit 100 --json tagName,publishedAt --jq 'sort_by(.publishedAt) | reverse | .[].tagName'
           $versionsASupprimer = @($versions | Select-Object -Skip 2)
           foreach ($version in $versionsASupprimer) {
             gh release delete $version --yes
