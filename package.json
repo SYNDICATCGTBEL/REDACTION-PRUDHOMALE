@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win nsis",
-    "release": "electron-builder --win nsis --publish always"
+    "release": "electron-builder --win nsis --publish always",
+    "publish-version": "node scripts/publish-version.js"
   },
   "devDependencies": {
     "electron": "^37.0.0",
