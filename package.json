@@ -1,6 +1,6 @@
 {
   "name": "syllogisme-redaction",
-  "version": "0.3.42",
+  "version": "0.3.43",
   "description": "Application locale de rédaction de jugements prud'homaux",
   "main": "main.js",
   "author": "CGT BEL",

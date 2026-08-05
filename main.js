@@ -231,7 +231,7 @@ function buildApplicationMenu() {
       { label: 'Guide d’utilisation', click: () => sendMenuCommand('help') },
       { label: 'Rechercher une mise à jour', click: () => sendMenuCommand('check-updates') },
       { type: 'separator' },
-      { label: 'À propos de Rédaction prud’homale', click: () => dialog.showMessageBox({ type: 'info', title: 'Rédaction prud’homale', message: 'Rédaction prud’homale', detail: 'Version 0.3.42\nApplication locale de la CGT BEL.' }) }
+      { label: 'À propos de Rédaction prud’homale', click: () => dialog.showMessageBox({ type: 'info', title: 'Rédaction prud’homale', message: 'Rédaction prud’homale', detail: 'Version 0.3.43\nApplication locale de la CGT BEL.' }) }
     ]}
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

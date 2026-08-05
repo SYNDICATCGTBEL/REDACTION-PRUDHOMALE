@@ -1,6 +1,6 @@
 # Rédaction prud’homale
 
-Version actuelle : 0.3.42
+Version actuelle : 0.3.43
 
 Application Electron locale pour organiser une rédaction de jugement en trois temps : « Exposé du litige », « Motifs de la décision » et « Par ces motifs ». L’exposé présente la procédure, les prétentions et les faits. Les motifs suivent le raisonnement juridique : chef de demande, règle de droit, « En l’espèce » et « En conséquence ». L’export produit un document Microsoft Word au format `.docx`. Une bibliothèque locale de 267 modèles de motivation, enrichie à partir des jugements Word et PDF fournis, permet de rechercher un thème et d’insérer le chef de demande et la règle de droit.
 
