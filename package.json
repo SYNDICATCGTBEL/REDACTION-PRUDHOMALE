@@ -1,12 +1,14 @@
 {
   "name": "syllogisme-redaction",
-  "version": "0.3.43",
+  "version": "0.3.48",
   "description": "Application locale de rédaction de jugements prud'homaux",
   "main": "main.js",
   "author": "CGT BEL",
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "verify": "npm test && node --check main.js && node --check preload.js && node --check pdf-worker.js && node --check document-export.js",
     "dist": "electron-builder --win nsis",
     "release": "npm run dist",
     "publish-version": "node scripts/publish-version.js"
@@ -18,7 +20,8 @@
   "dependencies": {
     "docx": "^9.5.1",
     "electron-updater": "^6.8.9",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^2.4.5",
+    "puppeteer": "^25.5.0"
   },
   "build": {
     "appId": "fr.cgtbel.redactionprudhomale",
@@ -37,6 +40,8 @@
       "main.js",
       "preload.js",
       "pdf-worker.js",
+      "document-export.js",
+      "rich-text.js",
       "index.html",
       "regles-syllogisme.js",
       "assets/**/*",
