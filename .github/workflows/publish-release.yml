@@ -27,7 +27,7 @@ jobs:
         run: npm ci
 
       - name: Construire la mise à jour
-        run: npm run dist
+        run: npm run dist -- --publish never
 
       - name: Publier la version
         shell: pwsh
