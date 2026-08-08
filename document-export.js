@@ -59,6 +59,20 @@ function styleFromAttributes(attributes, parent, tagName) {
       if (property === 'color') next.color = colorToHex(value) || next.color;
       if (property === 'background-color') next.background = colorToHex(value) || next.background;
       if (property === 'text-align') next.alignment = value.toLowerCase();
+      if (property === 'line-height') {
+        const num = Number.parseFloat(value);
+        if (!Number.isNaN(num) && num > 0) next.lineHeight = num;
+      }
+      if (property === 'margin-bottom') {
+        // Convert em to twips for Word (1em ≈ 240 twips at 12pt)
+        const num = Number.parseFloat(value);
+        if (!Number.isNaN(num)) {
+          if (value.endsWith('em')) next.paraSpacingAfter = Math.round(num * 240);
+          else if (value.endsWith('pt')) next.paraSpacingAfter = Math.round(num * 20);
+          else if (value.endsWith('px')) next.paraSpacingAfter = Math.round(num * 15);
+          else if (value === '0') next.paraSpacingAfter = 0;
+        }
+      }
     }
   }
   return next;
@@ -126,11 +140,13 @@ function richTextParagraphs(html, fallbackText, options = {}) {
     const paragraphOptions = { spacing: { after: 120 } };
     const alignment = paragraphAlignment(current.alignment);
     if (alignment) paragraphOptions.alignment = alignment;
+    if (current.lineHeight) paragraphOptions.spacing.line = Math.round(current.lineHeight * 240);
+    if (current.paraSpacingAfter !== undefined) paragraphOptions.spacing.after = current.paraSpacingAfter;
     if (current.list === 'ul') paragraphOptions.bullet = { level: 0 };
     const descriptors = [...current.descriptors];
     if (current.list === 'ol') descriptors.unshift({ text: `${++orderedIndex}. `, style: {} });
     blocks.push(new Paragraph({ ...paragraphOptions, children: descriptorsToRuns(descriptors, options.decision) }));
-    current = { descriptors: [], alignment: undefined, list: listStack.at(-1) || null };
+    current = { descriptors: [], alignment: undefined, lineHeight: undefined, paraSpacingAfter: undefined, list: listStack.at(-1) || null };
   };
   for (const token of tokens) {
     if (!token.startsWith('<')) {
@@ -165,6 +181,8 @@ function richTextParagraphs(html, fallbackText, options = {}) {
       const style = styleFromAttributes(attributes, styleStack.at(-1).style, tagName);
       styleStack.push({ tag: tagName, style });
       current.alignment = style.alignment || current.alignment;
+      current.lineHeight = style.lineHeight || current.lineHeight;
+      current.paraSpacingAfter = style.paraSpacingAfter ?? current.paraSpacingAfter;
       if (tagName === 'LI') current.list = listStack.at(-1) || 'ul';
     } else {
       if (block) flush(false);

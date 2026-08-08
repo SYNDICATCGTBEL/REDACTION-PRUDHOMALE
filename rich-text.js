@@ -1,6 +1,6 @@
 (function () {
   const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUB', 'SUP', 'SPAN', 'FONT', 'P', 'DIV', 'BR', 'H2', 'H3', 'UL', 'OL', 'LI']);
-  const STYLE_PROPERTIES = new Set(['font-family', 'font-size', 'color', 'background-color', 'text-align']);
+  const STYLE_PROPERTIES = new Set(['font-family', 'font-size', 'color', 'background-color', 'text-align', 'line-height', 'margin-bottom']);
   const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24'];
   const activeEditors = new WeakMap();
 
@@ -9,7 +9,9 @@
   }
 
   function textToHtml(value) {
-    return escapeHtml(String(value || '').replace(/\r/g, '')).replace(/\n/g, '<br>');
+    const text = escapeHtml(String(value || '').replace(/\r/g, ''));
+    if (!text) return '';
+    return text.split('\n').map(line => `<div>${line || '<br>'}</div>`).join('');
   }
 
   function cleanCssValue(property, value) {
@@ -18,13 +20,28 @@
     if (property === 'font-size' && !/^\d+(?:\.\d+)?(?:pt|px|em|rem|%)$/i.test(candidate)) return '';
     if ((property === 'color' || property === 'background-color') && !/^(?:#[0-9a-f]{3,8}|rgba?\([\d\s,.%]+\)|[a-z]+)$/i.test(candidate)) return '';
     if (property === 'text-align' && !/^(?:left|center|right|justify)$/i.test(candidate)) return '';
+    if (property === 'line-height' && !/^(?:\d+(?:\.\d+)?(?:pt|px|em|rem|%)?|normal)$/i.test(candidate)) return '';
+    if (property === 'margin-bottom' && !/^(?:\d+(?:\.\d+)?(?:pt|px|em|rem|%)?|0)$/i.test(candidate)) return '';
     if (property === 'font-family' && !/^[\w\s,"'-]+$/u.test(candidate)) return '';
     return candidate;
   }
 
+  function stripWordMarkup(html) {
+    let result = String(html || '');
+    result = result.replace(/<!--\[if[\s\S]*?<![\s]*endif[\s]*]-->/gi, '');
+    result = result.replace(/<!--[\s\S]*?-->/g, '');
+    result = result.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+    result = result.replace(/<\/?(xml|o:\w+|w:\w+|m:\w+|v:\w+|st\d*:\w+)[^>]*>/gi, '');
+    result = result.replace(/mso-[^;"']+;?/gi, '');
+    result = result.replace(/\s+class\s*=\s*["'][^"']*["']/gi, '');
+    result = result.replace(/\s+style\s*=\s*["']\s*["']/gi, '');
+    return result;
+  }
+
   function sanitizeHtml(value) {
+    const stripped = stripWordMarkup(value);
     const template = document.createElement('template');
-    template.innerHTML = String(value || '');
+    template.innerHTML = stripped;
     const clean = node => {
       if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent || '');
       if (node.nodeType !== Node.ELEMENT_NODE) return document.createDocumentFragment();
@@ -71,6 +88,23 @@
         </label>
         <label class="word-toolbar-select word-size-select">Taille
           <select data-rich-size aria-label="Taille de police">${FONT_SIZES.map(size => `<option value="${size}"${size === '12' ? ' selected' : ''}>${size}</option>`).join('')}</select>
+        </label>
+        <label class="word-toolbar-select word-spacing-select">Interligne
+          <select data-rich-lineheight aria-label="Espacement des lignes">
+            <option value="1">1.0 (Simple)</option>
+            <option value="1.15" selected>1.15 (Standard)</option>
+            <option value="1.5">1.5 (1,5 ligne)</option>
+            <option value="2">2.0 (Double)</option>
+          </select>
+        </label>
+        <label class="word-toolbar-select word-spacing-select">Esp. §
+          <select data-rich-paraspacing aria-label="Espacement de paragraphe">
+            <option value="0">Aucun</option>
+            <option value="0.25em" selected>Compact</option>
+            <option value="0.5em">Normal</option>
+            <option value="1em">Spacieux</option>
+            <option value="1.5em">Large</option>
+          </select>
         </label>
         <span class="word-toolbar-group" aria-label="Style du texte">
           <button type="button" data-rich-command="bold" title="Gras (Ctrl+B)" aria-label="Gras"><strong>G</strong></button>
@@ -135,9 +169,12 @@
     editor.spellcheck = true;
     editor.setAttribute('role', 'textbox');
     editor.setAttribute('aria-multiline', 'true');
-    editor.setAttribute('aria-label', textarea.getAttribute('aria-label') || textarea.closest('label')?.childNodes[0]?.textContent?.trim() || 'Zone de rédaction');
+    const explicitLabel = textarea.id ? document.querySelector(`label[for="${CSS.escape(textarea.id)}"]`) : null;
+    editor.setAttribute('aria-label', textarea.getAttribute('aria-label') || explicitLabel?.textContent?.trim() || textarea.closest('label')?.childNodes[0]?.textContent?.trim() || 'Zone de rédaction');
     editor.dataset.placeholder = textarea.getAttribute('placeholder') || 'Rédigez cette partie…';
     shell.append(toolbar, editor);
+    shell.addEventListener('mousedown', event => event.stopPropagation());
+    shell.addEventListener('click', event => event.stopPropagation());
     textarea.before(shell);
     textarea.classList.add('rich-text-source');
     textarea.setAttribute('aria-hidden', 'true');
@@ -145,6 +182,9 @@
 
     let savedRange = null;
     let syncingFromEditor = false;
+    const clearSelection = () => {
+      savedRange = null;
+    };
     const saveSelection = () => {
       if (!selectionInside(editor)) return;
       const selection = window.getSelection();
@@ -153,9 +193,18 @@
     const restoreSelection = () => {
       editor.focus();
       if (!savedRange) return;
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(savedRange);
+      if (!editor.contains(savedRange.commonAncestorContainer)) {
+        clearSelection();
+        return;
+      }
+      try {
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(savedRange);
+      } catch (err) {
+        clearSelection();
+        console.warn('Failed to restore selection:', err);
+      }
     };
     const updateToolbarState = () => {
       for (const button of toolbar.querySelectorAll('[data-rich-command]')) {
@@ -167,13 +216,40 @@
           button.setAttribute('aria-pressed', String(active));
         }
       }
+      if (selectionInside(editor)) {
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          let container = selection.getRangeAt(0).commonAncestorContainer;
+          if (container.nodeType === Node.TEXT_NODE) container = container.parentElement;
+          const block = container.closest('p, div, h2, h3, li') || editor;
+          const lineSelect = toolbar.querySelector('[data-rich-lineheight]');
+          if (lineSelect && block?.style?.lineHeight) lineSelect.value = block.style.lineHeight;
+        }
+        const paraSelect = toolbar.querySelector('[data-rich-paraspacing]');
+        if (paraSelect && editor.dataset.paraspacing) paraSelect.value = editor.dataset.paraspacing;
+      }
     };
     const syncSource = (emit = true) => {
       syncingFromEditor = true;
-      textarea.value = editorText(editor);
-      textarea.dataset.richHtml = sanitizeHtml(editor.innerHTML);
-      if (emit) textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      syncingFromEditor = false;
+      try {
+        textarea.value = editorText(editor);
+
+        const valPara = editor.dataset.paraspacing;
+        const valLine = editor.dataset.lineheight;
+        if (valPara || valLine) {
+          editor.querySelectorAll('p, div, h2, h3, li').forEach(b => {
+            if (valPara) b.style.marginBottom = valPara;
+            if (valLine) b.style.lineHeight = valLine;
+          });
+        }
+
+        textarea.dataset.richHtml = sanitizeHtml(editor.innerHTML);
+        if (emit) textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch (err) {
+        console.error('Error during editor synchronization:', err);
+      } finally {
+        syncingFromEditor = false;
+      }
     };
     const execute = command => {
       restoreSelection();
@@ -188,12 +264,16 @@
       button.addEventListener('mousedown', event => event.preventDefault());
       button.addEventListener('click', () => execute(button.dataset.richCommand));
     });
+    toolbar.querySelectorAll('select').forEach(sel => {
+      sel.addEventListener('mousedown', () => saveSelection());
+    });
     toolbar.querySelector('[data-rich-font]').addEventListener('change', event => {
       restoreSelection();
       document.execCommand('styleWithCSS', false, false);
       document.execCommand('fontName', false, event.target.value);
       saveSelection();
       syncSource();
+      setTimeout(() => editor.focus(), 0);
     });
     toolbar.querySelector('[data-rich-size]').addEventListener('change', event => {
       restoreSelection();
@@ -205,26 +285,56 @@
       });
       saveSelection();
       syncSource();
+      setTimeout(() => editor.focus(), 0);
+    });
+    toolbar.querySelector('[data-rich-lineheight]').addEventListener('change', event => {
+      restoreSelection();
+      const val = event.target.value;
+      // Store on editor element so it survives re-renders
+      editor.dataset.lineheight = val;
+      if (val) {
+        editor.querySelectorAll('p, div, h2, h3, li').forEach(b => b.style.lineHeight = val);
+      } else {
+        editor.querySelectorAll('p, div, h2, h3, li').forEach(b => b.style.lineHeight = '');
+      }
+      saveSelection();
+      syncSource();
+      setTimeout(() => editor.focus(), 0);
+    });
+    toolbar.querySelector('[data-rich-paraspacing]').addEventListener('change', event => {
+      restoreSelection();
+      const val = event.target.value;
+      editor.dataset.paraspacing = val;
+      // CSS variable applies automatically to ALL blocks, present and future
+      editor.style.setProperty('--para-spacing', val);
+      saveSelection();
+      syncSource();
+      setTimeout(() => editor.focus(), 0);
     });
     toolbar.querySelector('[data-rich-block]').addEventListener('change', event => {
       restoreSelection();
       document.execCommand('formatBlock', false, event.target.value);
       saveSelection();
       syncSource();
+      setTimeout(() => editor.focus(), 0);
     });
     toolbar.querySelector('[data-rich-color]').addEventListener('input', event => {
+      if (!event.target.value) return;
       restoreSelection();
       document.execCommand('styleWithCSS', false, false);
       document.execCommand('foreColor', false, event.target.value);
       saveSelection();
       syncSource();
+      setTimeout(() => editor.focus(), 0);
     });
     toolbar.querySelector('[data-rich-highlight]').addEventListener('input', event => {
+      if (!event.target.value) return;
       restoreSelection();
       document.execCommand('styleWithCSS', false, true);
       document.execCommand('hiliteColor', false, event.target.value);
       saveSelection();
       syncSource();
+      setTimeout(() => editor.focus(), 0);
     });
     editor.addEventListener('input', () => {
       saveSelection();
@@ -233,64 +343,20 @@
     });
     editor.addEventListener('keyup', () => { saveSelection(); updateToolbarState(); });
     editor.addEventListener('mouseup', () => { saveSelection(); updateToolbarState(); });
+    editor.addEventListener('contextmenu', saveSelection);
     editor.addEventListener('focus', () => { saveSelection(); shell.classList.add('focused'); });
     editor.addEventListener('blur', () => shell.classList.remove('focused'));
     editor.addEventListener('paste', event => {
       event.preventDefault();
       const html = event.clipboardData?.getData('text/html');
       const text = event.clipboardData?.getData('text/plain') || '';
-      document.execCommand(html ? 'insertHTML' : 'insertText', false, html ? sanitizeHtml(html) : text);
-    });
-
-    // Prevent toolbar controls (e.g., the font select) from stealing focus when
-    // the user clicks inside the editor surface. Clicking should always focus
-    // the editor surface itself.
-    editor.addEventListener('mousedown', event => {
-      try {
-        event.preventDefault();
-        editor.focus();
-        saveSelection();
-      } catch(e) { /* noop */ }
-    });
-
-    // Track last mousedown target to distinguish intentional toolbar clicks
-    let lastMouseDownTarget = null;
-    const mdown = e => { lastMouseDownTarget = e.target; };
-    document.addEventListener('mousedown', mdown, true);
-
-    // If the toolbar is marked as 'restorable' (i.e., disabled at open), prevent any focus
-    // moving into it and redirect focus back to the editor surface.
-    toolbar.addEventListener('focusin', (e) => {
-      try {
-        if (toolbar.dataset.restorable === 'true') {
-          e.stopPropagation();
-          e.preventDefault();
-          editor.focus();
-          saveSelection();
-        }
-      } catch (err) { /* noop */ }
-    }, true);
-
-    // If focus moves into the toolbar without a corresponding mousedown on that control,
-    // assume it was unintended and return focus to the editor. This avoids cases where
-    // the toolbar's select becomes focused immediately after clicking the editor.
-    const focusinTrap = e => {
-      try {
-        if (toolbar.contains(e.target) && lastMouseDownTarget !== e.target) {
-          e.preventDefault();
-          editor.focus();
-          saveSelection();
-        }
-      } catch (err) { /* noop */ }
-    };
-
-    editor.addEventListener('focus', () => {
-      document.addEventListener('focusin', focusinTrap, true);
-      shell.classList.add('focused');
-    });
-    editor.addEventListener('blur', () => {
-      document.removeEventListener('focusin', focusinTrap, true);
-      shell.classList.remove('focused');
+      if (html) {
+        const cleaned = sanitizeHtml(html);
+        const textContent = cleaned.replace(/<[^>]*>/g, '').trim();
+        document.execCommand('insertHTML', false, textContent ? cleaned : escapeHtml(text));
+      } else {
+        document.execCommand('insertText', false, text);
+      }
     });
 
     textarea.addEventListener('input', () => {
@@ -299,9 +365,36 @@
       textarea.dataset.richHtml = sanitizeHtml(editor.innerHTML);
     });
 
-    activeEditors.set(textarea, { shell, toolbar, editor, syncSource, restoreSelection, saveSelection });
+    activeEditors.set(textarea, { shell, toolbar, editor, syncSource, restoreSelection, saveSelection, clearSelection });
     set(textarea, textarea.value, options.html);
     return editor;
+  }
+
+  function normalizeBlocks(editor) {
+    const newChildren = [];
+    let currentBlock = null;
+    [...editor.childNodes].forEach(node => {
+      const isBlock = node.nodeType === Node.ELEMENT_NODE && ['P', 'DIV', 'H2', 'H3', 'UL', 'OL'].includes(node.tagName);
+      if (isBlock) {
+        if (currentBlock) { newChildren.push(currentBlock); currentBlock = null; }
+        newChildren.push(node);
+      } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') {
+        if (currentBlock) { newChildren.push(currentBlock); currentBlock = null; }
+        else {
+          const div = document.createElement('div');
+          div.appendChild(document.createElement('br'));
+          newChildren.push(div);
+        }
+      } else {
+        if (!currentBlock) currentBlock = document.createElement('div');
+        currentBlock.appendChild(node);
+      }
+    });
+    if (currentBlock) newChildren.push(currentBlock);
+    if (newChildren.length > 0) {
+      editor.innerHTML = '';
+      newChildren.forEach(child => editor.appendChild(child));
+    }
   }
 
   function set(textarea, plainText, html) {
@@ -309,7 +402,35 @@
     textarea.value = String(plainText || '');
     const cleanHtml = sanitizeHtml(html || textToHtml(plainText));
     textarea.dataset.richHtml = cleanHtml;
-    if (entry) entry.editor.innerHTML = cleanHtml;
+    if (entry) {
+      entry.clearSelection();
+      entry.editor.innerHTML = cleanHtml;
+      normalizeBlocks(entry.editor);
+
+      // Detect global styles from the first block if present
+      const firstBlock = entry.editor.querySelector('p, div, h2, h3, li');
+      if (firstBlock) {
+        if (firstBlock.style.lineHeight && !entry.editor.dataset.lineheight) {
+          entry.editor.dataset.lineheight = firstBlock.style.lineHeight;
+        }
+        if (firstBlock.style.marginBottom && !entry.editor.dataset.paraspacing) {
+          entry.editor.dataset.paraspacing = firstBlock.style.marginBottom;
+        }
+      }
+
+      const storedLh = entry.editor.dataset.lineheight;
+      if (storedLh) entry.editor.style.lineHeight = storedLh;
+      const storedPs = entry.editor.dataset.paraspacing;
+      if (storedPs) entry.editor.style.setProperty('--para-spacing', storedPs);
+
+      // Ensure all blocks have the correct styles applied immediately
+      if (storedPs || storedLh) {
+        entry.editor.querySelectorAll('p, div, h2, h3, li').forEach(b => {
+          if (storedPs) b.style.marginBottom = storedPs;
+          if (storedLh) b.style.lineHeight = storedLh;
+        });
+      }
+    }
   }
 
   function getHtml(textarea) {
@@ -335,7 +456,6 @@
     set(textarea, nextText, nextHtml);
     if (entry) entry.syncSource();
     else textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    (entry?.editor || textarea)?.focus();
   }
 
   function insertText(textarea, text) {

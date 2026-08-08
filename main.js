@@ -116,6 +116,30 @@ ipcMain.handle('copy-text', (_event, text) => {
   return { copied: true };
 });
 
+// Renderer-driven context menu with case-specific insert options
+ipcMain.handle('show-context-menu', (_event, template) => {
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return { action: null };
+  return new Promise(resolve => {
+    const buildItems = (items) => items.map(item => {
+      if (item.type === 'separator') return { type: 'separator' };
+      if (item.submenu) return { label: item.label, submenu: buildItems(item.submenu) };
+      if (item.role) return { label: item.label, role: item.role, enabled: item.enabled !== false };
+      return {
+        label: item.label,
+        enabled: item.enabled !== false,
+        click: () => resolve({ action: item.action || null, insertId: item.insertId ?? null, insertType: item.insertType || null })
+      };
+    });
+    const menu = Menu.buildFromTemplate(buildItems(template));
+    menu.once('menu-will-close', () => {
+      // Resolve with null if no item was clicked (menu dismissed)
+      setTimeout(() => resolve({ action: null }), 50);
+    });
+    menu.popup({ window: win });
+  });
+});
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1540,
@@ -132,6 +156,17 @@ function createWindow() {
     }
   });
   window.loadFile(path.join(__dirname, 'index.html'));
+
+  // Forward right-click to renderer so it can build a context menu
+  // with case-specific data (dates, allocations)
+  window.webContents.on('context-menu', (_event, params) => {
+    window.webContents.send('context-menu', {
+      isEditable: params.isEditable,
+      selectionText: params.selectionText || '',
+      x: params.x,
+      y: params.y
+    });
+  });
 }
 
 function sendMenuCommand(command) {
@@ -184,7 +219,7 @@ function buildApplicationMenu() {
       { label: 'Guide d’utilisation', click: () => sendMenuCommand('help') },
       { label: 'Rechercher une mise à jour', click: () => sendMenuCommand('check-updates') },
       { type: 'separator' },
-      { label: 'À propos de Rédaction prud’homale', click: () => dialog.showMessageBox({ type: 'info', title: 'Rédaction prud’homale', message: 'Rédaction prud’homale', detail: 'Version 0.3.48\nApplication locale de la CGT BEL.' }) }
+      { label: 'À propos de Rédaction prud’homale', click: () => dialog.showMessageBox({ type: 'info', title: 'Rédaction prud’homale', message: 'Rédaction prud’homale', detail: 'Version 0.3.58\nApplication locale de la CGT BEL.' }) }
     ]}
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
