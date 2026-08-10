@@ -2,6 +2,10 @@ const { AlignmentType, Document, Packer, Paragraph, ShadingType, TextRun, Underl
 
 const DOCUMENT_FONT = 'Aptos';
 const DOCUMENT_SIZE = 24;
+// Keep Word's default paragraphs identical to the on-screen preview:
+// line-height 1.5 and margin-bottom .65em at 12pt.
+const DEFAULT_LINE_SPACING = 360;
+const DEFAULT_PARAGRAPH_AFTER = 156;
 const DECISION_PATTERN = /^(DIT|RECONNAÎT|PRONONCE|ORDONNE|CONDAMNE|DÉBOUTE)\b/iu;
 
 function safeFileName(value) {
@@ -128,16 +132,23 @@ function paragraphAlignment(value) {
 
 function richTextParagraphs(html, fallbackText, options = {}) {
   const safeHtml = String(html || '').replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '');
-  if (!safeHtml.trim()) return String(fallbackText || '[À compléter]').split(/\r?\n/).map(line => textParagraph(line || ' ', { spacing: { after: 120 } }));
+  if (!safeHtml.trim()) return String(fallbackText || '[À compléter]').split(/\r?\n/).map(line => textParagraph(line || ' ', { spacing: { line: DEFAULT_LINE_SPACING, after: DEFAULT_PARAGRAPH_AFTER } }));
   const tokens = safeHtml.match(/<[^>]+>|[^<]+/g) || [];
   const blocks = [];
   const styleStack = [{ tag: 'ROOT', style: {} }];
   const listStack = [];
   let orderedIndex = 0;
   let current = { descriptors: [], alignment: undefined, list: null };
+  const resetCurrent = () => { current = { descriptors: [], alignment: undefined, lineHeight: undefined, paraSpacingAfter: undefined, list: listStack.at(-1) || null }; };
   const flush = force => {
     if (!force && !current.descriptors.some(item => item.break || item.text?.length)) return;
-    const paragraphOptions = { spacing: { after: 120 } };
+    // Browsers collapse an empty rich-text block into the surrounding paragraph
+    // spacing. Exporting it as a Word paragraph adds a full extra blank line.
+    if (current.descriptors.length && current.descriptors.every(item => item.break || !String(item.text || '').trim())) {
+      resetCurrent();
+      return;
+    }
+    const paragraphOptions = { spacing: { line: DEFAULT_LINE_SPACING, after: DEFAULT_PARAGRAPH_AFTER } };
     const alignment = paragraphAlignment(current.alignment);
     if (alignment) paragraphOptions.alignment = alignment;
     if (current.lineHeight) paragraphOptions.spacing.line = Math.round(current.lineHeight * 240);
@@ -146,7 +157,7 @@ function richTextParagraphs(html, fallbackText, options = {}) {
     const descriptors = [...current.descriptors];
     if (current.list === 'ol') descriptors.unshift({ text: `${++orderedIndex}. `, style: {} });
     blocks.push(new Paragraph({ ...paragraphOptions, children: descriptorsToRuns(descriptors, options.decision) }));
-    current = { descriptors: [], alignment: undefined, lineHeight: undefined, paraSpacingAfter: undefined, list: listStack.at(-1) || null };
+    resetCurrent();
   };
   for (const token of tokens) {
     if (!token.startsWith('<')) {
@@ -191,7 +202,7 @@ function richTextParagraphs(html, fallbackText, options = {}) {
     }
   }
   flush(false);
-  return blocks.length ? blocks : [textParagraph(fallbackText || ' ', { spacing: { after: 120 } })];
+  return blocks.length ? blocks : [textParagraph(fallbackText || ' ', { spacing: { line: DEFAULT_LINE_SPACING, after: DEFAULT_PARAGRAPH_AFTER } })];
 }
 
 function textParagraph(text, options = {}) {
@@ -203,13 +214,14 @@ function textParagraph(text, options = {}) {
 
 function sectionParagraph(section) {
   const paragraphs = [new Paragraph({
+    alignment: AlignmentType.CENTER,
     spacing: { before: 300, after: 120 },
     children: [new TextRun({ text: section.title.toUpperCase(), bold: true, font: DOCUMENT_FONT, size: DOCUMENT_SIZE })]
   })];
   const isDispositif = section.title.toLowerCase() === 'par ces motifs';
   const isMotifs = section.title.toLowerCase() === 'motifs de la décision';
-  (section.fields || []).forEach(field => {
-    if (field.title && !isMotifs) paragraphs.push(new Paragraph({ spacing: { before: 160, after: 90 }, children: [new TextRun({ text: field.title.toUpperCase(), bold: true, font: DOCUMENT_FONT, size: DOCUMENT_SIZE })] }));
+  (section.fields || []).filter(field => String(field?.title || '').trim().toLowerCase() !== 'lettre de licenciement (si applicable)').forEach(field => {
+    if (field.title && !isMotifs) paragraphs.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 160, after: 90 }, children: [new TextRun({ text: field.title.toUpperCase(), bold: true, font: DOCUMENT_FONT, size: DOCUMENT_SIZE })] }));
     paragraphs.push(...richTextParagraphs(field.html, field.content || '[À compléter]', { decision: isDispositif }));
   });
   return paragraphs;
