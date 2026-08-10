@@ -5,6 +5,80 @@ const fs = require('fs/promises');
 const { buildDocxBuffer, safeFileName } = require('./document-export');
 
 let updateState = { status: 'idle' };
+let lastBackupAt = 0;
+
+function caseDataDirectory() { return path.join(app.getPath('userData'), 'sauvegardes-dossiers'); }
+
+async function atomicWrite(filePath, content) {
+  const temporary = `${filePath}.tmp`;
+  await fs.writeFile(temporary, content, { encoding: 'utf8', mode: 0o600 });
+  await fs.rename(temporary, filePath);
+}
+
+function versionFileName(now = Date.now()) { return `version-${new Date(now).toISOString().replace(/[:.]/g, '-')}.json`; }
+
+async function writeVersion(serialized) {
+  const directory = caseDataDirectory();
+  await fs.mkdir(directory, { recursive: true });
+  await atomicWrite(path.join(directory, versionFileName()), serialized);
+  const versions = (await fs.readdir(directory)).filter(name => /^version-.*\.json$/.test(name)).sort().reverse();
+  await Promise.all(versions.slice(10).map(name => fs.unlink(path.join(directory, name)).catch(() => {})));
+}
+
+ipcMain.handle('create-case-backup', async (_event, serialized) => {
+  if (typeof serialized !== 'string' || serialized.length > 20_000_000) return { saved: false };
+  try { JSON.parse(serialized); await writeVersion(serialized); return { saved: true }; } catch (_) { return { saved: false }; }
+});
+
+ipcMain.handle('list-case-versions', async (_event, caseId) => {
+  try {
+    const directory = caseDataDirectory();
+    const names = (await fs.readdir(directory)).filter(name => /^version-.*\.json$/.test(name)).sort().reverse();
+    const versions = [];
+    for (const fileName of names) {
+      try {
+        const store = JSON.parse(await fs.readFile(path.join(directory, fileName), 'utf8'));
+        const caseFile = store.cases?.find(item => item.id === caseId);
+        if (caseFile) versions.push({ fileName, title: caseFile.title || 'Dossier sans titre', savedAt: caseFile.updatedAt || 0 });
+      } catch (_) {}
+    }
+    return { versions };
+  } catch (_) { return { versions: [] }; }
+});
+
+ipcMain.handle('read-case-version', async (_event, fileName, caseId) => {
+  if (!/^version-.*\.json$/.test(String(fileName || ''))) return { found: false };
+  try {
+    const store = JSON.parse(await fs.readFile(path.join(caseDataDirectory(), fileName), 'utf8'));
+    const caseFile = store.cases?.find(item => item.id === caseId);
+    return caseFile ? { found: true, caseFile } : { found: false };
+  } catch (_) { return { found: false }; }
+});
+
+ipcMain.handle('save-case-data', async (_event, serialized) => {
+  if (typeof serialized !== 'string' || serialized.length > 20_000_000) return { saved: false, message: 'Données de sauvegarde invalides.' };
+  try { JSON.parse(serialized); } catch (_) { return { saved: false, message: 'Données de sauvegarde corrompues.' }; }
+  const directory = caseDataDirectory();
+  await fs.mkdir(directory, { recursive: true });
+  await atomicWrite(path.join(directory, 'dossiers-courants.json'), serialized);
+  const now = Date.now();
+  if (now - lastBackupAt >= 5 * 60 * 1000) {
+    lastBackupAt = now;
+    await writeVersion(serialized);
+  }
+  return { saved: true };
+});
+
+ipcMain.handle('load-case-recovery', async () => {
+  try {
+    const directory = caseDataDirectory();
+    const names = ['dossiers-courants.json', ...(await fs.readdir(directory)).filter(name => /^version-.*\.json$/.test(name)).sort().reverse()];
+    for (const name of names) {
+      try { const serialized = await fs.readFile(path.join(directory, name), 'utf8'); JSON.parse(serialized); return { recovered: true, serialized }; } catch (_) {}
+    }
+  } catch (_) {}
+  return { recovered: false };
+});
 
 function configureUpdater() {
   autoUpdater.autoDownload = false;
@@ -183,6 +257,8 @@ function buildApplicationMenu() {
       { label: 'Analyser des conclusions PDF', click: () => sendMenuCommand('import-pdf') },
       { label: 'Rechercher une règle de droit', click: () => sendMenuCommand('search-rule') },
       { label: 'Mettre à jour le jugement', accelerator: 'Ctrl+S', click: () => sendMenuCommand('update-judgment') },
+      { label: 'Dupliquer ce dossier', accelerator: 'Ctrl+Shift+D', click: () => sendMenuCommand('duplicate-case') },
+      { label: 'Historique des sauvegardes', click: () => sendMenuCommand('case-history') },
       { label: 'Supprimer ce dossier', click: () => sendMenuCommand('delete-case') },
       { type: 'separator' },
       { label: 'Exporter au format Word', click: () => sendMenuCommand('export-word') },
@@ -219,7 +295,7 @@ function buildApplicationMenu() {
       { label: 'Guide d’utilisation', click: () => sendMenuCommand('help') },
       { label: 'Rechercher une mise à jour', click: () => sendMenuCommand('check-updates') },
       { type: 'separator' },
-      { label: 'À propos de Rédaction prud’homale', click: () => dialog.showMessageBox({ type: 'info', title: 'Rédaction prud’homale', message: 'Rédaction prud’homale', detail: 'Version 0.3.58\nApplication locale de la CGT BEL.' }) }
+      { label: 'À propos de Rédaction prud’homale', click: () => dialog.showMessageBox({ type: 'info', title: 'Rédaction prud’homale', message: 'Rédaction prud’homale', detail: 'Version 0.3.68\nApplication locale de la CGT BEL.' }) }
     ]}
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

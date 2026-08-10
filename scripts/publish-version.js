@@ -5,7 +5,7 @@ const version = process.argv[2];
 const currentVersion = require('../package.json').version;
 
 if (!/^\d+\.\d+\.\d+$/.test(version || '')) {
-  console.error('Indiquez une version au format X.Y.Z. Exemple : npm run publish-version -- 0.3.58');
+  console.error('Indiquez une version au format X.Y.Z. Exemple : npm run publish-version -- 0.3.66');
   process.exit(1);
 }
 

@@ -341,6 +341,38 @@
       syncSource();
       updateToolbarState();
     });
+    const placeCaretAfterPointer = event => {
+      editor.focus({ preventScroll: true });
+      if (selectionInside(editor)) {
+        saveSelection();
+        return;
+      }
+      let range = null;
+      if (typeof document.caretPositionFromPoint === 'function') {
+        const position = document.caretPositionFromPoint(event.clientX, event.clientY);
+        if (position && editor.contains(position.offsetNode)) {
+          range = document.createRange();
+          range.setStart(position.offsetNode, position.offset);
+        }
+      } else if (typeof document.caretRangeFromPoint === 'function') {
+        const candidate = document.caretRangeFromPoint(event.clientX, event.clientY);
+        if (candidate && editor.contains(candidate.startContainer)) range = candidate;
+      }
+      if (!range) {
+        range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+      } else {
+        range.collapse(true);
+      }
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      saveSelection();
+    };
+    editor.addEventListener('pointerup', event => {
+      requestAnimationFrame(() => placeCaretAfterPointer(event));
+    });
     editor.addEventListener('keyup', () => { saveSelection(); updateToolbarState(); });
     editor.addEventListener('mouseup', () => { saveSelection(); updateToolbarState(); });
     editor.addEventListener('contextmenu', saveSelection);
@@ -404,6 +436,8 @@
     textarea.dataset.richHtml = cleanHtml;
     if (entry) {
       entry.clearSelection();
+      if (selectionInside(entry.editor)) window.getSelection()?.removeAllRanges();
+      entry.editor.contentEditable = 'true';
       entry.editor.innerHTML = cleanHtml;
       normalizeBlocks(entry.editor);
 
@@ -442,9 +476,35 @@
     return activeEditors.get(textarea)?.editor || null;
   }
 
-  function focus(textarea) {
+  function destroy(textarea) {
+    const entry = activeEditors.get(textarea);
+    if (!entry) return;
+    if (selectionInside(entry.editor)) window.getSelection()?.removeAllRanges();
+    if (entry.shell.contains(document.activeElement)) document.activeElement?.blur();
+    entry.clearSelection();
+    entry.shell.remove();
+    activeEditors.delete(textarea);
+    textarea.classList.remove('rich-text-source');
+    textarea.removeAttribute('aria-hidden');
+    textarea.removeAttribute('tabindex');
+  }
+
+  function focus(textarea, options = {}) {
     const editor = getEditor(textarea);
-    (editor || textarea)?.focus();
+    if (!editor) {
+      textarea?.focus();
+      return;
+    }
+    editor.focus({ preventScroll: Boolean(options.preventScroll) });
+    const forceCaretPlacement = options.atStart === true || options.atEnd === true;
+    if (!forceCaretPlacement && selectionInside(editor)) return;
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(options.atStart === true);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    activeEditors.get(textarea)?.saveSelection();
   }
 
   function appendText(textarea, addition, separator = '\n\n') {
@@ -474,5 +534,5 @@
     entry.syncSource();
   }
 
-  window.RichText = { enhance, set, getHtml, getEditor, focus, appendText, insertText, sanitizeHtml, textToHtml };
+  window.RichText = { enhance, destroy, set, getHtml, getEditor, focus, appendText, insertText, sanitizeHtml, textToHtml };
 })();
